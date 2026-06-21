@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/expense_split
+      - JWT_SECRET=production_grade_super_secret_jwt_key_123!
+      - JWT_REFRESH_SECRET=production_grade_super_secret_refresh_jwt_key_456!
+      - USE_REDIS=true
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+    depends_on:
+      - mongo
+      - redis
+    volumes:
+      - uploads_volume:/usr/src/app/uploads
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:
+  uploads_volume:
