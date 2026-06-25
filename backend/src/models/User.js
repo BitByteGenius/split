@@ -40,10 +40,58 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  refreshToken: {
-    type: String,
-    default: null,
-    index: true
+  sessions: [
+    {
+      refreshToken: {
+        type: String,
+        required: true,
+        index: true
+      },
+      deviceName: {
+        type: String,
+        default: 'Unknown Device'
+      },
+      platform: {
+        type: String,
+        default: 'Unknown Platform'
+      },
+      ipAddress: {
+        type: String,
+        default: ''
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      },
+      lastUsedAt: {
+        type: Date,
+        default: Date.now
+      },
+      expiresAt: {
+        type: Date,
+        required: true
+      }
+    }
+  ],
+  failedLoginAttempts: {
+    type: Number,
+    default: 0
+  },
+  lockUntil: {
+    type: Date,
+    default: null
+  },
+  otpRequestCount: {
+    type: Number,
+    default: 0
+  },
+  otpRequestWindowStart: {
+    type: Date,
+    default: null
+  },
+  isDisabled: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

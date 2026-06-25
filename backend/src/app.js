@@ -20,9 +20,23 @@ const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
-// 1. Security & CORS
+// 1. Security & CORS (Hardened Helmet Setup)
 app.use(helmet({
-  crossOriginResourcePolicy: false // Allows loading images from server in Flutter web/apps
+  crossOriginResourcePolicy: false, // Allows loading images from server in Flutter web/apps
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "*"], // allow local uploads & ImageKit
+      connectSrc: ["'self'", "*"] // allow Flutter clients on other IPs/domains
+    }
+  },
+  xssFilter: true, // X-XSS-Protection
+  frameguard: { action: 'deny' }, // X-Frame-Options
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true }, // Strict-Transport-Security
+  referrerPolicy: { policy: 'same-origin' } // Referrer-Policy
 }));
 app.use(cors());
 

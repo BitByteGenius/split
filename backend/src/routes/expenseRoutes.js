@@ -1,13 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const expenseController = require('../controllers/expenseController');
-const { protect, logAudit } = require('../middleware/auth');
+const { protect, authorize, logAudit } = require('../middleware/auth');
+const { PERMISSIONS } = require('../config/permissions');
+const { validateAddExpense } = require('../middleware/validators');
 const upload = require('../middleware/upload');
 
 router.use(protect);
 
-router.post('/', upload.single('receipt'), logAudit('expense.create'), expenseController.addExpense);
+router.post('/', upload.single('receipt'), validateAddExpense, logAudit('expense.create'), expenseController.addExpense);
 router.get('/group/:groupId', expenseController.getExpenses);
-router.delete('/:id', logAudit('expense.delete'), expenseController.deleteExpense);
+
+// Deleting expense requires DELETE_EXPENSE (can be creator or group admin)
+router.delete('/:id', authorize(PERMISSIONS.DELETE_EXPENSE), logAudit('expense.delete'), expenseController.deleteExpense);
 
 module.exports = router;

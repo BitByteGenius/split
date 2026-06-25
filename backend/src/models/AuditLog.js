@@ -24,10 +24,18 @@ const auditLogSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  device: {
+    type: String,
+    trim: true
+  },
   timestamp: {
     type: Date,
     default: Date.now,
     index: true
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 });
 
