@@ -24,45 +24,46 @@ const startServer = async () => {
 
   // Admin default email and password
   const adminEmail = process.env.DEFAULT_ADMIN_EMAIL;
-const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
 
-const existing = await User.findOne({ email: adminEmail });
+  const existing = await User.findOne({ email: adminEmail });
 
-if (!existing) {
-    const hashedPassword = await bcrypt.hash(adminPassword, 10);
-
+  if (!existing) {
     await User.create({
-        name: "System Admin",
-        email: adminEmail,
-        passwordHash: hashedPassword,
-        role: "admin",
-        isVerified: true,
+      name: 'System Admin',
+      email: adminEmail,
+      // Let the User model hash the raw password once in its pre-save hook.
+      passwordHash: adminPassword,
+      role: 'admin',
+      isVerified: true,
     });
 
-    logger.info("Default admin created");
-} else {
+    logger.info('Default admin created');
+  } else {
     let changed = false;
 
-    if (existing.role !== "admin") {
-        existing.role = "admin";
-        changed = true;
+    if (existing.role !== 'admin') {
+      existing.role = 'admin';
+      changed = true;
     }
 
     if (!existing.isVerified) {
-        existing.isVerified = true;
-        changed = true;
+      existing.isVerified = true;
+      changed = true;
     }
 
-    if (process.env.DEFAULT_ADMIN_FORCE_RESET === "true") {
-        existing.passwordHash = await bcrypt.hash(adminPassword, 10);
-        changed = true;
+    const passwordMatches = await bcrypt.compare(adminPassword, existing.passwordHash);
+    if (!passwordMatches || process.env.DEFAULT_ADMIN_FORCE_RESET === 'true') {
+      // Store the raw password so the model hook hashes it exactly once.
+      existing.passwordHash = adminPassword;
+      changed = true;
     }
 
     if (changed) {
-        await existing.save();
-        logger.info("Admin updated");
+      await existing.save();
+      logger.info('Admin updated');
     }
-}
+  }
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {

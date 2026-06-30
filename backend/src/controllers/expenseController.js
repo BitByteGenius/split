@@ -238,6 +238,255 @@ exports.getExpenses = async (req, res, next) => {
   }
 };
 
+exports.searchExpenses = async (req, res, next) => {
+  try {
+    const memberships = await GroupMember.find({ user: req.user._id }).select('group');
+    const allowedGroupIds = memberships.map((membership) => membership.group);
+
+    const {
+      title,
+      category,
+      groupId,
+      startDate,
+      endDate,
+      amount,
+      limit
+    } = req.query;
+
+    const query = {
+      group: groupId ? groupId : { $in: allowedGroupIds }
+    };
+
+    if (groupId && !allowedGroupIds.some((id) => id.toString() === groupId)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view expenses in this group' });
+    }
+
+    if (title) {
+      query.title = { $regex: title, $options: 'i' };
+    }
+
+    if (category) {
+      query.category = { $regex: `^${category}$`, $options: 'i' };
+    }
+
+    if (amount) {
+      const parsedAmount = parseFloat(amount);
+      query.amount = {
+        $gte: Math.max(0, parsedAmount - 1),
+        $lte: parsedAmount + 1
+      };
+    }
+
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) {
+        query.date.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.date.$lte = new Date(endDate);
+      }
+    }
+
+    const maxResults = Math.min(parseInt(limit, 10) || 20, 50);
+    const expenses = await Expense.find(query)
+      .populate('createdBy', 'name email')
+      .populate('group', 'name')
+      .sort({ date: -1, createdAt: -1 })
+      .limit(maxResults);
+
+    const detailedExpenses = await Promise.all(expenses.map(async (exp) => {
+      const participants = await ExpenseParticipant.find({ expense: exp._id })
+        .populate('user', 'name email profilePicture');
+
+      return {
+        id: exp._id,
+        title: exp.title,
+        amount: exp.amount,
+        category: exp.category,
+        date: exp.date,
+        notes: exp.notes,
+        splitMethod: exp.splitMethod,
+        group: exp.group ? { id: exp.group._id, name: exp.group.name } : null,
+        createdBy: exp.createdBy ? {
+          id: exp.createdBy._id,
+          name: exp.createdBy.name,
+          email: exp.createdBy.email
+        } : null,
+        participants: participants.map((participant) => ({
+          id: participant._id,
+          user: participant.user ? {
+            id: participant.user._id,
+            name: participant.user.name,
+            email: participant.user.email
+          } : null,
+          paidAmount: participant.paidAmount,
+          owedAmount: participant.owedAmount
+        }))
+      };
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: detailedExpenses.length,
+      expenses: detailedExpenses
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getExpenseDetails = async (req, res, next) => {
+  try {
+    const expense = await Expense.findById(req.params.id)
+      .populate('createdBy', 'name email')
+      .populate('group', 'name');
+
+    if (!expense) {
+      return res.status(404).json({ success: false, message: 'Expense not found' });
+    }
+
+    const isMember = await GroupMember.findOne({ group: expense.group._id, user: req.user._id });
+    if (!isMember) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const participants = await ExpenseParticipant.find({ expense: expense._id })
+      .populate('user', 'name email profilePicture');
+
+    res.status(200).json({
+      success: true,
+      expense: {
+        id: expense._id,
+        title: expense.title,
+        amount: expense.amount,
+        category: expense.category,
+        date: expense.date,
+        notes: expense.notes,
+        splitMethod: expense.splitMethod,
+        group: expense.group ? { id: expense.group._id, name: expense.group.name } : null,
+        createdBy: expense.createdBy ? {
+          id: expense.createdBy._id,
+          name: expense.createdBy.name,
+          email: expense.createdBy.email
+        } : null,
+        participants: participants.map((participant) => ({
+          id: participant._id,
+          user: participant.user ? {
+            id: participant.user._id,
+            name: participant.user.name,
+            email: participant.user.email
+          } : null,
+          paidAmount: participant.paidAmount,
+          owedAmount: participant.owedAmount
+        }))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const redistributeByRatio = (entries, currentTotal, newTotal, key) => {
+  if (!entries.length) {
+    return [];
+  }
+
+  if (entries.length === 1) {
+    return [round(newTotal)];
+  }
+
+  const safeCurrentTotal = currentTotal > 0 ? currentTotal : entries.reduce((sum, entry) => sum + Number(entry[key] || 0), 0);
+  let runningSum = 0;
+
+  return entries.map((entry, index) => {
+    if (index === entries.length - 1) {
+      return round(newTotal - runningSum);
+    }
+
+    const baseValue = Number(entry[key] || 0);
+    const ratio = safeCurrentTotal > 0 ? (baseValue / safeCurrentTotal) : (1 / entries.length);
+    const nextValue = round(ratio * newTotal);
+    runningSum += nextValue;
+    return nextValue;
+  });
+};
+
+exports.updateExpense = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const expenseId = req.params.id;
+    const expense = await Expense.findById(expenseId).session(session);
+
+    if (!expense) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ success: false, message: 'Expense not found' });
+    }
+
+    const isMember = await GroupMember.findOne({ group: expense.group, user: req.user._id }).session(session);
+    if (!isMember) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const isCreator = expense.createdBy.toString() === req.user._id.toString();
+    const isAdmin = isMember.role === 'admin';
+    if (!isCreator && !isAdmin) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(403).json({ success: false, message: 'Only expense creator or group admin can update' });
+    }
+
+    const participants = await ExpenseParticipant.find({ expense: expense._id }).session(session);
+    const previousAmount = Number(expense.amount);
+    const nextAmount = req.body.amount != null ? parseFloat(req.body.amount) : previousAmount;
+
+    if (req.body.title != null) {
+      expense.title = req.body.title;
+    }
+    if (req.body.category != null) {
+      expense.category = req.body.category;
+    }
+    if (req.body.notes != null) {
+      expense.notes = req.body.notes;
+    }
+    if (req.body.date != null) {
+      expense.date = new Date(req.body.date);
+    }
+    expense.amount = nextAmount;
+
+    if (participants.length > 0 && Math.abs(nextAmount - previousAmount) > 0.001) {
+      const paidAmounts = redistributeByRatio(participants, previousAmount, nextAmount, 'paidAmount');
+      const owedAmounts = redistributeByRatio(participants, previousAmount, nextAmount, 'owedAmount');
+
+      for (let index = 0; index < participants.length; index += 1) {
+        participants[index].paidAmount = paidAmounts[index];
+        participants[index].owedAmount = owedAmounts[index];
+        participants[index].netBalance = round(participants[index].paidAmount - participants[index].owedAmount);
+        await participants[index].save({ session });
+      }
+    }
+
+    await expense.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json({
+      success: true,
+      message: 'Expense updated successfully',
+      expense
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    next(error);
+  }
+};
+
 exports.deleteExpense = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();

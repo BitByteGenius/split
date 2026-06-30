@@ -127,6 +127,32 @@ const validateAddExpense = [
   validate
 ];
 
+const validateUpdateExpense = [
+  body('amount').optional().isFloat({ gt: 0 }).withMessage('Amount must be a number greater than 0'),
+  body('title').optional().trim().notEmpty().withMessage('Expense title cannot be empty'),
+  body('category').optional().trim().notEmpty().withMessage('Category cannot be empty'),
+  body('notes').optional().trim(),
+  body('date').optional().isISO8601().withMessage('Date must be a valid ISO date'),
+  validate
+];
+
+const validateSearchExpenses = [
+  query('title').optional().trim(),
+  query('category').optional().trim(),
+  query('groupId').optional().isMongoId().withMessage('Invalid Group ID'),
+  query('startDate').optional().isISO8601().withMessage('Start date must be a valid ISO date'),
+  query('endDate').optional().isISO8601().withMessage('End date must be a valid ISO date'),
+  query('amount').optional().isFloat({ gt: 0 }).withMessage('Amount must be a valid positive number'),
+  validate
+];
+
+const validateAiAssistant = [
+  body('message').trim().notEmpty().withMessage('Message is required'),
+  body('history').optional().isArray().withMessage('History must be an array'),
+  body('pendingAction').optional().isObject().withMessage('Pending action must be an object'),
+  validate
+];
+
 // Settlement Validators
 const validateCreateSettlement = [
   body('groupId').isMongoId().withMessage('Invalid Group ID'),
@@ -146,5 +172,8 @@ module.exports = {
   validateCreateGroup,
   validateAddMember,
   validateAddExpense,
-  validateCreateSettlement
+  validateUpdateExpense,
+  validateSearchExpenses,
+  validateCreateSettlement,
+  validateAiAssistant
 };
