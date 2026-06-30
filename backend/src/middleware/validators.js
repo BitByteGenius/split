@@ -100,10 +100,30 @@ const validateAddMember = [
 const validateAddExpense = [
   body('groupId').isMongoId().withMessage('Invalid Group ID'),
   body('amount').isFloat({ gt: 0 }).withMessage('Amount must be a number greater than 0'),
-  body('description').trim().notEmpty().withMessage('Description is required'),
-  body('splitMethod').isIn(['equal', 'unequal', 'percentage']).withMessage('Split method must be equal, unequal, or percentage'),
+  body('title').trim().notEmpty().withMessage('Expense title is required'),
+  body('category').optional().trim().notEmpty().withMessage('Category cannot be empty'),
+  body('notes').optional().trim(),
+  body('splitMethod')
+    .isIn(['equal', 'exact', 'percentage', 'shares'])
+    .withMessage('Split method must be equal, exact, percentage, or shares'),
+  body('paidBy').optional().isMongoId().withMessage('Invalid payer User ID'),
   body('participants').isArray({ min: 1 }).withMessage('At least one participant is required'),
-  body('participants.*.userId').isMongoId().withMessage('Invalid participant User ID'),
+  body('participants.*.user').isMongoId().withMessage('Invalid participant User ID'),
+  body('participants').custom((participants, { req }) => {
+    if (!Array.isArray(participants)) return true;
+    if (req.body.splitMethod === 'equal') return true;
+
+    for (const participant of participants) {
+      const value = Number(participant.value);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error('Every participant must have a valid non-negative split value');
+      }
+      if (req.body.splitMethod === 'shares' && value <= 0) {
+        throw new Error('Every participant must have at least one share');
+      }
+    }
+    return true;
+  }),
   validate
 ];
 
