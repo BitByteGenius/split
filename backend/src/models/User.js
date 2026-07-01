@@ -92,6 +92,10 @@ const userSchema = new mongoose.Schema({
   isDisabled: {
     type: Boolean,
     default: false
+  },
+  aiMemory: {
+    type: Object,
+    default: {}
   }
 }, {
   timestamps: true
@@ -104,7 +108,7 @@ userSchema.pre('save', async function () {
   this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
 });
 
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.passwordHash);
 };
 

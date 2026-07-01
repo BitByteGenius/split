@@ -10,7 +10,8 @@ exports.askAssistant = async (req, res, next) => {
       userId: req.user._id,
       message,
       history,
-      pendingAction
+      pendingAction,
+      user: req.user
     });
 
     res.status(200).json({

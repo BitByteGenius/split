@@ -22,32 +22,32 @@ const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
   }
 };*/
 const parseJsonObject = (content) => {
-    if (!content || typeof content !== "string") {
-        throw new Error("AI provider returned an empty response");
+  if (!content || typeof content !== "string") {
+    throw new Error("AI provider returned an empty response");
+  }
+
+  let cleaned = content.trim();
+
+  // Remove markdown code fences
+  cleaned = cleaned
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (_) {
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      return JSON.parse(
+        cleaned.slice(firstBrace, lastBrace + 1)
+      );
     }
 
-    let cleaned = content.trim();
-
-    // Remove markdown code fences
-    cleaned = cleaned
-        .replace(/```json/gi, "")
-        .replace(/```/g, "")
-        .trim();
-
-    try {
-        return JSON.parse(cleaned);
-    } catch (_) {
-        const firstBrace = cleaned.indexOf("{");
-        const lastBrace = cleaned.lastIndexOf("}");
-
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-            return JSON.parse(
-                cleaned.slice(firstBrace, lastBrace + 1)
-            );
-        }
-
-        throw new Error("AI provider did not return valid JSON");
-    }
+    throw new Error("AI provider did not return valid JSON");
+  }
 };
 
 const createAiProvider = () => {
@@ -59,6 +59,11 @@ const createAiProvider = () => {
     return {
       isConfigured: false,
       async createJsonResponse() {
+        throw new Error(
+          'AI assistant is not configured. Add AI_PROVIDER, AI_API_KEY and AI_MODEL to backend/.env.'
+        );
+      },
+      async createStructuredResponse() {
         throw new Error(
           'AI assistant is not configured. Add AI_PROVIDER, AI_API_KEY and AI_MODEL to backend/.env.'
         );
@@ -161,6 +166,26 @@ const createAiProvider = () => {
         data?.choices?.[0]?.message?.content;
 
       return parseJsonObject(content);
+    },
+
+    async createStructuredResponse({ systemPrompt, messages, schema, retries = 2 }) {
+      let attempt = 0;
+      while (attempt <= retries) {
+        try {
+          const response = await this.createJsonResponse({ systemPrompt, messages });
+          if (schema && response && typeof response === 'object') {
+            return response;
+          }
+          throw new Error('Assistant returned invalid structured output');
+        } catch (error) {
+          attempt += 1;
+          if (attempt > retries) {
+            throw error;
+          }
+        }
+      }
+
+      throw new Error('Assistant failed to produce structured output');
     }
   };
 };
